@@ -1,0 +1,138 @@
+var SPREADSHEET_SAGE_ID = "1svOd-IdYqybrTdijHOqvG5dOdJEOk-QHtRZTHcdTvZ4";
+
+// 1. MANEJO DE SOLICITUDES GET (SAGE o RESUMEN)
+function doGet(e) {
+  try {
+    var action = e.parameter.action;
+
+    // CONSULTAR RESUMEN DE PRODUCCIÓN
+    if (action === "resumen") {
+      var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+      var lastRow = sheet.getLastRow();
+
+      if (lastRow < 2) {
+        return ContentService.createTextOutput(JSON.stringify([])).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      var inicio = new Date(e.parameter.inicio + "T00:00:00");
+      var fin = new Date(e.parameter.fin + "T23:59:59");
+
+      var datos = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+      var agrupado = {};
+
+      for (var i = 0; i < datos.length; i++) {
+        var fechaRegistro = new Date(datos[i][0]); // Columna A: FechaHora
+        var recetaId = datos[i][1];                // Columna B: ID Receta
+        var recetaNombre = datos[i][2];            // Columna C: Nombre Receta
+        var totalBatch = parseFloat(datos[i][3].toString().replace(',', '.')) || 0; // Columna D
+        var loteInterno = datos[i][9];             // Columna J: Lote Interno (para identificar lotes únicos)
+
+        if (fechaRegistro >= inicio && fechaRegistro <= fin) {
+          var key = recetaId + "___" + recetaNombre;
+          if (!agrupado[key]) {
+            agrupado[key] = { recetaId: recetaId, recetaNombre: recetaNombre, lotes: {}, totalKg: 0 };
+          }
+          // Agrupamos lotes únicos según loteInterno
+          if (!agrupado[key].lotes[loteInterno]) {
+            agrupado[key].lotes[loteInterno] = true;
+            agrupado[key].totalKg += totalBatch;
+          }
+        }
+      }
+
+      var resultado = [];
+      for (var k in agrupado) {
+        resultado.push({
+          recetaId: agrupado[k].recetaId,
+          recetaNombre: agrupado[k].recetaNombre,
+          lotesElaborados: Object.keys(agrupado[k].lotes).length,
+          totalKg: agrupado[k].totalKg
+        });
+      }
+
+      return ContentService.createTextOutput(JSON.stringify(resultado))
+                           .setMimeType(ContentService.MimeType.JSON)
+                           .setHeaders({ "Access-Control-Allow-Origin": "*" });
+    }
+
+    // POR DEFECTO: LECTURA DE SAGE
+    var targetSpreadsheet = SpreadsheetApp.openById(SPREADSHEET_SAGE_ID);
+    var sheetSage = targetSpreadsheet.getSheetByName("Hoja 1"); 
+
+    if (!sheetSage) {
+      return ContentService.createTextOutput(JSON.stringify({ "status": "error", "message": "No se encontró la pestaña 'Hoja 1'" }))
+                           .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var lastRowSage = sheetSage.getLastRow();
+    if (lastRowSage < 2) {
+      return ContentService.createTextOutput(JSON.stringify({ "status": "success", "lotes": {} }))
+                           .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var headers = sheetSage.getRange(1, 1, 1, sheetSage.getLastColumn()).getValues()[0];
+    var colCodigo = headers.indexOf("Codigo Articulo") + 1;
+    var colLote = headers.indexOf("IdLote") + 1;
+
+    var valores = sheetSage.getRange(2, 1, lastRowSage - 1, sheetSage.getLastColumn()).getValues();
+    var lotesObtenidos = {};
+    
+    for (var j = valores.length - 1; j >= 0; j--) {
+      var codigo = valores[j][colCodigo - 1].toString().trim();
+      var lote = valores[j][colLote - 1].toString().trim();
+      
+      if (codigo && lote) {
+        if (!lotesObtenidos[codigo]) lotesObtenidos[codigo] = [];
+        if (lotesObtenidos[codigo].indexOf(lote) === -1 && lotesObtenidos[codigo].length < 3) {
+          lotesObtenidos[codigo].push(lote);
+        }
+      }
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({ "status": "success", "lotes": lotesObtenidos }))
+                         .setMimeType(ContentService.MimeType.JSON)
+                         .setHeaders({ "Access-Control-Allow-Origin": "*" });
+                         
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ "status": "error", "message": error.toString() }))
+                         .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// 2. FUNCIÓN PARA GUARDAR REGISTROS (INCLUYE OPERADOR EN LA COLUMNA K / COLUMNA 11)
+function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var fechaHora = new Date();
+    
+    for (var i = 0; i < data.ingredientes.length; i++) {
+      var ing = data.ingredientes[i];
+      sheet.appendRow([
+        fechaHora,
+        data.recetaId,
+        data.recetaNombre,
+        data.totalBatch,
+        ing.codi,
+        ing.nombre,
+        ing.lote,
+        ing.cantidad,
+        ing.unidad,
+        ing.loteInterno,
+        data.operador // Columna K (11ª columna) para registrar al operador
+      ]);
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({ "status": "success" }))
+                         .setMimeType(ContentService.MimeType.JSON)
+                         .setHeaders({ 
+                           "Access-Control-Allow-Origin": "*", 
+                           "Access-Control-Allow-Methods": "POST",
+                           "Access-Control-Allow-Headers": "Content-Type"
+                         });
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ "status": "error", "message": error.toString() }))
+                         .setMimeType(ContentService.MimeType.JSON)
+                         .setHeaders({ "Access-Control-Allow-Origin": "*" });
+  }
+}
