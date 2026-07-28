@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MES - Trazabilidad de Producción</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; padding: 20px; padding-bottom: 340px; } 
+        .card { border-radius: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .btn-lg { padding: 15px 30px; font-size: 1.25rem; } 
+        .fila-limitante { background-color: #fff3cd !important; transition: background-color 0.2s ease; }
+
+        .select-lote-personalizado, .input-lote-manual {
+            font-size: 1.25rem !important;
+            height: calc(3.5rem + 2px);
+            font-weight: bold !important;
+        }
+
+        .scale-checkbox {
+            transform: scale(1.6);
+            cursor: pointer;
+            margin-top: 0.5rem;
+        }
+
+        /* --- TECLADOS VIRTUALES --- */
+        .numpad-container, .keyboard-container {
+            position: fixed;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #e9ecef;
+            box-shadow: 0 -4px 15px rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 20px 20px 0 0;
+            z-index: 1060;
+            width: 100%;
+            transition: all 0.2s ease-in-out;
+        }
+        .numpad-container.hidden, .keyboard-container.hidden { display: none; }
+
+        .numpad-container { max-width: 450px; }
+        .numpad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        
+        .keyboard-container { max-width: 850px; }
+        .keyboard-row { display: flex; justify-content: center; gap: 6px; margin-bottom: 8px; }
+        
+        .btn-num, .btn-key {
+            background-color: #ffffff;
+            border: 1px solid #ced4da;
+            padding: 14px;
+            font-size: 1.4rem;
+            font-weight: bold;
+            border-radius: 10px;
+            cursor: pointer;
+            user-select: none;
+            color: #212529;
+            text-align: center;
+        }
+        .btn-num { padding: 18px; font-size: 1.6rem; }
+        .btn-key { min-width: 50px; height: 55px; display: flex; align-items: center; justify-content: center; flex-grow: 1; }
+        .btn-num:active, .btn-key:active { background-color: #dee2e6; }
+        
+        .action-clear { background-color: #ffc107; color: #212529; border-color: #ffc107; }
+        .action-done { background-color: #198754; color: white; border-color: #198754; }
+        .key-wide { flex-grow: 2; background-color: #e2e8f0; }
+        .key-space { flex-grow: 6; background-color: #ffffff; }
+
+        .status-badge { font-size: 0.9rem; position: absolute; top: 15px; right: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid position-relative">
+    <div id="status-lotes" class="badge bg-warning text-dark status-badge">Descarregant Lots SAGE...</div>
+
+    <header class="pb-3 mb-4 border-bottom text-center">
+        <span class="display-4 fw-bold text-danger">PREPARATS CARNICS ESCO FRESC S.L.U. - Sistema de Traçabilitat</span>
+    </header>
+
+    <!-- NAVEGACIÓN Y CAMBIO DE PANTALLAS -->
+    <div class="row mb-4">
+        <div class="col-12 text-center">
+            <div class="btn-group btn-group-lg" role="group">
+                <button type="button" id="btn-nav-registro" class="btn btn-primary active" onclick="cambiarPantalla('registro')">📋 Registro de Producción</button>
+                <button type="button" id="btn-nav-resumen" class="btn btn-outline-primary" onclick="cambiarPantalla('resumen')">📊 Resumen de Producción</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PANTALLA 1: REGISTRO DE PRODUCCIÓN -->
+    <div id="pantalla-registro" class="row g-4">
+        
+        <!-- BLOQUE 1: Selección de Operador -->
+        <div class="col-12">
+            <div class="card p-4">
+                <h3>1. Selección de Operador</h3>
+                <div class="mt-2">
+                    <label for="operador" class="form-label text-muted fw-bold">Operador:</label>
+                    <div id="contenedor-operador">
+                        <select class="form-select form-select-lg" id="operador" onchange="gestionarCambioOperador(this)">
+                            <option value="DANIEL GULLA" selected>DANIEL GULLA</option>
+                            <option value="__MANUAL__">✍️ Introducir nombre manual...</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BLOQUE 2: Selección de Receta -->
+        <div class="col-12">
+            <div class="card p-4">
+                <h3>2. Selección de Receta</h3>
+                <div class="mt-2">
+                    <label for="receta" class="form-label text-muted fw-bold">Seleccioneu la recepta a preparar:</label>
+                    <select class="form-select form-select-lg" id="receta">
+                        <option value="">-- Buscar Codi --</option>
+                        <option value="77777"> CRUDO PER BUTTIFARRA SALTXI</option>
+                        <option value="88888"> CRUDO POLLASTRE PER BURGERS SALTXI</option>
+                        <option value="30">30 - BUTIFARRA DE PORC</option>
+                        <option value="31">31 - SALTXITXES DE PORC</option>                        
+                        <option value="32">32 - CARN PICADA PORC</option>
+                        <option value="34">34 - XORIÇ FRESC</option>
+                        <option value="36">36 - BURGER MEAT VACA</option>
+                        <option value="37">37 - BOTIFARRA DE ROVELLONS</option>
+                        <option value="54">54/55 - BULL BLANC / BOTIFARRA BLANCA</option>
+                        <option value="56">56/57 - BOTIFARRA FAVES / BOTIFARRA NEGRA </option>    
+                        <option value="99958">58 - CRUDO BUTIFARRA CATALANA</option>
+                        <option value="99970">70 - CRUDO CAP SENGLAR - JABALÍ</option>
+                        <option value="70">70 - EMBOTIT - CAP SENGLAR - EMBOTIT</option>
+                        <option value="58">58 - BUTIFARRA CATALANA</option>
+                        <option value="930041">CRUDO - BUTIFARRA DUROC</option>
+                        <option value="30041">30041 - BUTIFARRA DUROC</option>
+                        <option value="105">105 - XISTORRA</option>
+                        <option value="197">197 - XORIÇ CRIOLL</option>
+                        <option value="223">223 - SMASH BURGUER</option>
+                        <option value="225">225 - PICADA COSTELLA VEDELLA</option>
+                        <option value="226">226 - BURGER MEAT VEDELLA</option>
+                        <option value="228">228 - CARN PICADA VEDELLA</option>
+                        <option value="229">229 - MANDONGUILLES VEDELL</option>
+                        <option value="303">303 - BURGER MEAT POLLASTRE</option>
+                        <option value="317">317 - SALSITXES POLLASTRE</option>
+                        <option value="2031">2031 - BURGER MEAT VACA PREMIUM</option>
+                        <option value="10035">10035 - BURGUER MEAT VEDELLA - ANGUS</option>
+                        <option value="10042">10042 - BURGER MEAT VEDELLA</option>
+                        <option value="20115">20115 - BURGER COSTELLA VEDELLA</option>
+                        <option value="69996">69996 - PICADA VEDELLA EXTRA</option> 
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- BLOQUE 3: Disponibilidad y Escalado -->
+        <div class="col-12">
+            <div class="card p-4">
+                <h3>3. Disponibilidad y Escalado</h3>
+                
+                <div id="no-receta-msg" class="text-center text-muted mt-5">
+                    Seleccione una receta para ver los detalles de stock.
+                </div>
+
+                <div id="tabla-contenedor" class="d-none">
+                    <form id="form-batch" onsubmit="enviarAGoogleSheets(event)">
+                        <table class="table table-hover mt-3 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Codi</th>
+                                    <th>Ingredient</th>
+                                    <th style="width: 220px;">Lote SAGE</th>
+                                    <th>Quantitat Base</th>
+                                    <th>Unitat</th>
+                                    <th class="text-center" style="width: 90px;">Escalat<br>Automàtic</th>
+                                    <th style="width: 220px;">Ús Real (Limitant)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabla-ingredientes-body">
+                            </tbody>
+                            <tfoot class="table-dark">
+                                <tr class="fw-bold">
+                                    <td colspan="3">TOTAL FORMULACIÓ BATCH</td>
+                                    <td id="total-base-campo">-</td>
+                                    <td>kg</td>
+                                    <td></td>
+                                    <td id="total-real-campo">-</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+
+                        <div class="text-end mt-4">
+                            <button type="button" class="btn btn-secondary btn-lg me-2" onclick="window.location.reload();">Cancel·lar</button>
+                            <button type="submit" id="btn-guardar" class="btn btn-success btn-lg shadow">Confirmar i Desar Batch</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div> 
+
+    <!-- PANTALLA 2: RESUMEN DE PRODUCCIÓN -->
+    <div id="pantalla-resumen" class="row g-4 d-none">
+        <div class="col-12">
+            <div class="card p-4">
+                <h3>Resumen de Producciones</h3>
+                <div class="row align-items-end mb-4">
+                    <div class="col-md-4">
+                        <label for="fecha-inicio" class="form-label fw-bold">Fecha Inicio:</label>
+                        <input type="date" class="form-control form-control-lg" id="fecha-inicio">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="fecha-fin" class="form-label fw-bold">Fecha Fin:</label>
+                        <input type="date" class="form-control form-control-lg" id="fecha-fin">
+                    </div>
+                    <div class="col-md-4">
+                        <button type="button" class="btn btn-primary btn-lg w-100" onclick="cargarResumenProduccion()">🔎 Filtrar Resumen</button>
+                    </div>
+                </div>
+
+                <div id="resumen-cargando" class="text-center d-none my-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Consultando producciones...</p>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ID Receta</th>
+                                <th>Nombre Receta</th>
+                                <th class="text-center">Lotes Elaborados</th>
+                                <th class="text-end">Total Producido (kg)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-resumen-body">
+                            <tr>
+                                <td colspan="4" class="text-center text-muted">Seleccione las fechas y haga clic en 'Filtrar Resumen'.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TECLADOS VIRTUALES -->
+<div id="numeric-pad" class="numpad-container hidden">
+    <div class="numpad-grid">
+        <button type="button" class="btn-num" data-val="1">1</button>
+        <button type="button" class="btn-num" data-val="2">2</button>
+        <button type="button" class="btn-num" data-val="3">3</button>
+        <button type="button" class="btn-num" data-val="4">4</button>
+        <button type="button" class="btn-num" data-val="5">5</button>
+        <button type="button" class="btn-num" data-val="6">6</button>
+        <button type="button" class="btn-num" data-val="7">7</button>
+        <button type="button" class="btn-num" data-val="8">8</button>
+        <button type="button" class="btn-num" data-val="9">9</button>
+        <button type="button" class="btn-num action-clear" data-val="C">C</button>
+        <button type="button" class="btn-num" data-val="0">0</button>
+        <button type="button" class="btn-num action-done" data-val="OK">OK</button>
+        <button type="button" class="btn-num" data-val=".">.</button>
+    </div>
+</div>
+
+<div id="alphanumeric-keyboard" class="keyboard-container hidden">
+    <div class="keyboard-row">
+        <button type="button" class="btn-key" data-key="1">1</button>
+        <button type="button" class="btn-key" data-key="2">2</button>
+        <button type="button" class="btn-key" data-key="3">3</button>
+        <button type="button" class="btn-key" data-key="4">4</button>
+        <button type="button" class="btn-key" data-key="5">5</button>
+        <button type="button" class="btn-key" data-key="6">6</button>
+        <button type="button" class="btn-key" data-key="7">7</button>
+        <button type="button" class="btn-key" data-key="8">8</button>
+        <button type="button" class="btn-key" data-key="9">9</button>
+        <button type="button" class="btn-key" data-key="0">0</button>
+        <button type="button" class="btn-key" data-key="-">-</button>
+    </div>
+    <div class="keyboard-row">
+        <button type="button" class="btn-key" data-key="Q">Q</button>
+        <button type="button" class="btn-key" data-key="W">W</button>
+        <button type="button" class="btn-key" data-key="E">E</button>
+        <button type="button" class="btn-key" data-key="R">R</button>
+        <button type="button" class="btn-key" data-key="T">T</button>
+        <button type="button" class="btn-key" data-key="Y">Y</button>
+        <button type="button" class="btn-key" data-key="U">U</button>
+        <button type="button" class="btn-key" data-key="I">I</button>
+        <button type="button" class="btn-key" data-key="O">O</button>
+        <button type="button" class="btn-key" data-key="P">P</button>
+    </div>
+    <div class="keyboard-row">
+        <button type="button" class="btn-key" data-key="A">A</button>
+        <button type="button" class="btn-key" data-key="S">S</button>
+        <button type="button" class="btn-key" data-key="D">D</button>
+        <button type="button" class="btn-key" data-key="F">F</button>
+        <button type="button" class="btn-key" data-key="G">G</button>
+        <button type="button" class="btn-key" data-key="H">H</button>
+        <button type="button" class="btn-key" data-key="J">J</button>
+        <button type="button" class="btn-key" data-key="K">K</button>
+        <button type="button" class="btn-key" data-key="L">L</button>
+        <button type="button" class="btn-key" data-key="Ñ">Ñ</button>
+    </div>
+    <div class="keyboard-row">
+        <button type="button" class="btn-key action-clear key-wide" data-key="BORRAR">BORRAR</button>
+        <button type="button" class="btn-key" data-key="Z">Z</button>
+        <button type="button" class="btn-key" data-key="X">X</button>
+        <button type="button" class="btn-key" data-key="C">C</button>
+        <button type="button" class="btn-key" data-key="V">V</button>
+        <button type="button" class="btn-key" data-key="B">B</button>
+        <button type="button" class="btn-key" data-key="N">N</button>
+        <button type="button" class="btn-key" data-key="M">M</button>
+        <button type="button" class="btn-key action-done key-wide" data-key="OK">OK</button>
+    </div>
+</div>
+
+<script>
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyuHVCLFAutjMo2qdiQzDKuewempmC1rW-Hsoyo6DRGaRhCP2MdZZQIpHwmTFBQqyu-sQ/exec";
+const SAGE_CSV_URL = "https://docs.google.com/spreadsheets/d/1svOd-IdYqybrTdijHOqvG5dOdJEOk-QHtRZTHcdTvZ4/gviz/tq?tqx=out:csv&sheet=Hoja%201";
+
+let lotesTemporalesSAGE = {};
+let currentInput = null;
+let currentLoteInput = null;
+
+const baseDatosIngredientes = {
+    "77777": [
+        {cod: "2", nom: "CARN MAGRA PORC", base: "50", uni: "kg"},
+        {cod: "17818", nom: "TIRA DE LLOM", base: "20", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "7", uni: "kg"},
+        {cod: "46466", nom: "PREP.LONG.FRESCA.NAT Nº20", base: "1,31", uni: "kg"},
+        {cod: "47403", nom: "SAL FINA", base: "1", uni: "kg"},
+        {cod: "46436", nom: "PEBRE BLANC MOLT FI", base: "0,19", uni: "kg"}
+    ],
+    "30": [
+        {cod: "40084", nom: "SAFATA 320.260.50", base: "20", uni: "un", excluirTotal: true},
+        {cod: "77777", nom: "CRUDO PER BUTIFFARRA SALTXITXAS", base: "30", uni: "kg"},
+        {cod: "47873", nom: "TRIPA DE PORC 28/30", base: "7", uni: "un", excluirTotal: true}
+    ],
+    "31": [
+        {cod: "40084", nom: "SAFATA 320.260.50", base: "20", uni: "un", excluirTotal: true},        
+        {cod: "77777", nom: "CRUDO PER BUTIFFARRA SALTXITXAS", base: "34", uni: "kg"},
+        {cod: "47876", nom: "TRIPA DE XAI 22/24", base: "7", uni: "un", excluirTotal: true}
+    ],
+    "32": [
+        {cod: "2", nom: "ESPATLLA S/OS PORC", base: "50", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "2,5", uni: "kg"},
+        {cod: "16023", nom: "SALCO N 16 g/Kg", base: "0,88", uni: "kg"}
+    ],
+    "34": [
+        {cod: "10023", nom: "RETALL BACO 50/50", base: "30", uni: "kg"},
+        {cod: "17818", nom: "TIRA DE LLOM", base: "10", uni: "kg"},
+        {cod: "47873", nom: "TRIPA CERDO 28/30", base: "3", uni: "un", excluirTotal: true},
+        {cod: "16035", nom: "PREPARAT XORIÇ", base: "2,815", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "0,2", uni: "kg"}
+    ],
+    "36": [
+        {cod: "70014", nom: "PEIXET PAPADA VEDELL", base: "50", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "5", uni: "kg"},
+        {cod: "46480", nom: "BURGER MEAT 40 - 27 g/Kg", base: "1,586", uni: "kg"}
+    ],
+    "37": [
+        {cod: "40084", nom: "SAFATA 320.260.50", base: "20", uni: "un", excluirTotal: true},
+        {cod: "77777", nom: "CRUDO PER BUTIFFARRA SALTXITXAS", base: "30", uni: "kg"},
+        {cod: "47873", nom: "TRIPA DE PORC 28/30", base: "7", uni: "un", excluirTotal: true},
+        {cod: "47065", nom: "ROVELLO TROSSOS 3 KG", base: "1,62", uni: "kg"}
+    ],
+    "54": [
+        {cod: "30002", nom: "PRODUCTE CUIT INTERMIG", base: "3", uni: "kg"},
+        {cod: "", nom: "", base: "", uni: ""},
+        {cod: "11", nom: "LLENGUES PORC", base: "0,613", uni: "kg", excluirTotal: true},
+        {cod: "6482", nom: "PULMONS PORC", base: "1,099", uni: "kg", excluirTotal: true},
+        {cod: "10860", nom: "CORS PORC", base: "1,287", uni: "kg", excluirTotal: true},
+        {cod: "", nom: "", base: "", uni: ""},
+        {cod: "2", nom: "CARN MAGRA PORC", base: "17", uni: "kg"},
+        {cod: "48", nom: "PAPADA PORC SENSE PELL", base: "10", uni: "kg"},
+        {cod: "16076", nom: "CALDO", base: "0", uni: "kg"},
+        {cod: "47403", nom: "SAL FINA", base: "0,48", uni: "kg"},
+        {cod: "46436", nom: "PEBRE BLANC MOLT FI  [3 g/kg]", base: "0,090", uni: "kg"},
+        {cod: "16075", nom: "EXTRACTE ESPECIES   [2 g/kg]", base: "0,06", uni: "kg"},
+        {cod: "47873", nom: "TRIPA CERDO 28/30", base: "2,5", uni: "un", excluirTotal: true}
+    ],
+    "56": [
+        {cod: "30002", nom: "CARNS CUIDES A CUINA", base: "27,65", uni: "kg"},
+        {cod: "", nom: "", base: "", uni: ""},
+        {cod: "15", nom: "PAPADA A/PELL PORC", base: "10", uni: "kg", excluirTotal: true},
+        {cod: "10861", nom: "COTNA PORC", base: "3,6", uni: "kg", excluirTotal: true},
+        {cod: "40", nom: "MORRO PORC", base: "5,180", uni: "kg", excluirTotal: true},
+        {cod: "7020", nom: "RETALL CAP PORC", base: "3,48", uni: "kg", excluirTotal: true},
+        {cod: "6482", nom: "PULMONS PORC", base: "4,46", uni: "kg", excluirTotal: true},
+        {cod: "10860", nom: "CORS PORC", base: "0,92", uni: "kg", excluirTotal: true},
+        {cod: "", nom: "", base: "", uni: ""},
+        {cod: "7400", nom: "SANG PORC", base: "6", uni: "Litros"},
+        {cod: "2671", nom: "GREIX PORC per negra", base: "6,95", uni: "kg"},
+        {cod: "47403", nom: "SAL FINA", base: "0,650", uni: "kg"},
+        {cod: "46429", nom: "PEBRE NEGRE MOLT FI", base: "0,120", uni: "kg"},
+        {cod: "47878", nom: "TRIPA CERDO 36/38", base: "4", uni: "un", excluirTotal: true}
+    ],
+    "58": [
+        {cod: "99958", nom: "CRUDO BOTIFARRA CATALANA", base: "16", uni: "kg"},
+        {cod: "49", nom: "PANXETA PORC", base: "4", uni: "kg"},
+        {cod: "47403", nom: "SAL FINA 14g/kg", base: "0,28", uni: "kg"},
+        {cod: "50071", nom: "PICADILLO TOFONA", base: "0,2", uni: "kg"},
+        {cod: "15034", nom: "VINO COCINA JIN FAN 500 ML", base: "0,2", uni: "kg"},
+        {cod: "2129", nom: "SUCRE BLANC 1 KG 4g/kg", base: "0,08", uni: "kg"},
+        {cod: "46436", nom: "PEBRE BLANC MOLT FI 2g/kg", base: "0,04", uni: "kg"},
+        {cod: "45633", nom: "SAL NITRIFICANT 2g/kg", base: "0,04", uni: "kg"},
+        {cod: "40074", nom: "ACID ASCORBIC", base: "0,01", uni: "kg"},
+        {cod: "45634", nom: "NOU MOSCADA 0.0005/kg", base: "0,01", uni: "kg"}
+    ],
+    "99958": [
+        {cod: "2", nom: "PERNIL FRESC SENSE OS", base: "16", uni: "kg"},
+        {cod: "49", nom: "PANXETA PORC", base: "4", uni: "kg"},
+        {cod: "47403", nom: "SAL FINA 14g/kg", base: "0,28", uni: "kg"},
+        {cod: "2129", nom: "SUCRE BLANC 1 KG 4g/kg", base: "0,080", uni: "kg"},
+        {cod: "27001", nom: "AIGUA", base: "0,400", uni: "kg"},
+        {cod: "45633", nom: "SAL NITRIFICANT 2g/kg", base: "0,040", uni: "kg"},
+        {cod: "15034", nom: "VINO COCINA JIN FAN 500 ML", base: "0,2", uni: "kg"},
+        {cod: "46436", nom: "PEBRE BLANC MOLT FI 2g/kg", base: "0,04", uni: "kg"},
+        {cod: "40074", nom: "ACID ASCORBIC", base: "0,01", uni: "kg"},
+        {cod: "45634", nom: "NOU MOSCADA 0.0005/kg", base: "0,01", uni: "kg"}
+    ],
+    "70": [
+        {cod: "40084", nom: "SAFATA 320.260.50", base: "20", uni: "un", excluirTotal: true},
+        {cod: "99970", nom: "CRUDO PER CAP SENGLAR JABALI", base: "30", uni: "kg"},
+        {cod: "47873", nom: "TRIPA DE PORC 28/30", base: "7", uni: "un", excluirTotal: true}
+    ],
+    "99970": [
+        {cod: "11", nom: "LLENGUES PORC", base: "8,400", uni: "kg"},
+        {cod: "40", nom: "MORRO PORC", base: "8,400", uni: "kg"},
+        {cod: "27001", nom: "AIGUA", base: "12", uni: "kg"},
+        {cod: "47403", nom: "SAL FINA", base: "0,480", uni: "kg"},
+        {cod: "45633", nom: "SAL NITRIFICANT", base: "0,120", uni: "kg"},
+        {cod: "2129", nom: "SUCRE BLANC", base: "0,080", uni: "kg"} 
+    ],
+    "94": [
+        {cod: "30002", nom: "PRODUCTE CUIT INTERMIG", base: "51", uni: "kg"},
+        {cod: "15", nom: "PAPADA A/PELL PORC [limpia]", base: "12", uni: "kg"},
+        {cod: "40", nom: "MORRO PORC", base: "10,4", uni: "kg"},
+        {cod: "7020", nom: "RETALL CAP PORC", base: "8,32", uni: "kg", excluirTotal: true},
+        {cod: "10860", nom: "CORS PORC", base: "6,42", uni: "kg", excluirTotal: true},
+        {cod: "6482", nom: "PULMONS PORC", base: "4,66", uni: "kg", excluirTotal: true},
+        {cod: "18434", nom: "VENTRE PORC", base: "3,98", uni: "kg", excluirTotal: true},
+        {cod: "11", nom: "LLENGUES PORC", base: "2,22", uni: "kg", excluirTotal: true},
+        {cod: "47403", nom: "SAL FINA 16  g/kg", base: "1,01", uni: "kg"},
+        {cod: "46429", nom: "PEBRE NEGRE 3,5 g/kg", base: "0,22", uni: "kg"},
+        {cod: "47878", nom: "TRIPA CERDO 36/38", base: "8", uni: "un", excluirTotal: true}
+    ],
+    "95": [
+        {cod: "2", nom: "ESPATLLA S/OS PORC", base: "7,6", uni: "kg"},
+        {cod: "43067", nom: "OU LIQUIT PASTEURITZAT", base: "7", uni: "Litros"},
+        {cod: "48", nom: "PAPADA PORC S/PELL", base: "4,4", uni: "kg"},
+        {cod: "47873", nom: "TRIPA CERDO 28/30", base: "3", uni: "un", excluirTotal: true},
+        {cod: "379", nom: "ROVELL OU", base: "1", uni: "Litros"},
+        {cod: "47403", nom: "SAL FINA", base: "0,3", uni: "kg"},
+        {cod: "16075", nom: "EXTRACTE ESPECIES   [2 g/kg]", base: "0,04", uni: "kg"},
+        {cod: "46436", nom: "PEBRE BLANC MOLT FI", base: "0,04", uni: "kg"}
+    ],
+    "105": [
+        {cod: "10023", nom: "RETALL BACO 50/50", base: "30", uni: "kg"},
+        {cod: "17818", nom: "TIRA DE LLOM", base: "10", uni: "kg"},
+        {cod: "16034", nom: "PREPARAT XISTORRA", base: "2,815", uni: "kg"},
+        {cod: "47876", nom: "TRIPA XAI 22/24", base: "0,23", uni: "un", excluirTotal: true},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "0,2", uni: "kg"}
+    ],
+    "197": [
+        {cod: "40486", nom: "BOLSA VACIO 250X350", base: "9", uni: "kg", excluirTotal: true},
+        {cod: "70040", nom: "CARN VEDELLA", base: "5", uni: "kg"},
+        {cod: "10023", nom: "RETALL BACO 50/50", base: "5", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "0,5", uni: "kg"},
+        {cod: "46472", nom: "PREP. CRIOLLO", base: "0,5", uni: "kg"},
+        {cod: "47873", nom: "TRIPA CERDO 28/30", base: "0,2", uni: "un", excluirTotal: true}
+    ],
+    "223": [
+        {cod: "70014", nom: "PEIXET PAPADA VEDELL", base: "50", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "7,5", uni: "kg"},
+        {cod: "16076", nom: "FIBRA DE PESOLS", base: "1,725", uni: "kg"},
+        {cod: "16023", nom: "SALCO N 16 g/Kg", base: "1,599", uni: "kg"}
+    ],
+    "225": [
+        {cod: "70040", nom: "CARN VEDELLA", base: "50", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "7,5", uni: "kg"},
+        {cod: "16076", nom: "FIBRA DE PESOLS", base: "1,725", uni: "kg"},
+        {cod: "16023", nom: "SALCO N 16 g/Kg", base: "0,948", uni: "kg"}
+    ],
+    "226": [
+        {cod: "70040", nom: "CARN VEDELLA", base: "50", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "5", uni: "kg"},
+        {cod: "46480", nom: "BURGER MEAT 40 - 27 g/Kg", base: "1,485", uni: "kg"}
+    ],
+    "228": [
+        {cod: "70040", nom: "CARN VEDELLA", base: "50", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "7,5", uni: "kg"},
+        {cod: "16076", nom: "FIBRA DE PESOLS", base: "1,725", uni: "kg"},
+        {cod: "16023", nom: "SALCO N 16 g/Kg", base: "0,948", uni: "kg"}
+    ],
+    "229": [
+        {cod: "70040", nom: "CARN VEDELLA", base: "50", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "7,5", uni: "kg"},
+        {cod: "16076", nom: "FIBRA DE PESOLS", base: "1,725", uni: "kg"},
+        {cod: "16023", nom: "SALCO N 16 g/Kg", base: "0,948", uni: "kg"}
+    ],
+    "303": [
+        {cod: "40084", nom: "SAFATA 320.260.50", base: "10", uni: "un", excluirTotal: true},        
+        {cod: "88888", nom: "CRUDO PER BUTIFFARRA SALTXITXAS", base: "15", uni: "kg"}
+    ],
+    "317": [
+        {cod: "40084", nom: "SAFATA POREX 17.5X25X4", base: "10", uni: "un", excluirTotal: true},        
+        {cod: "88888", nom: "CRUDO PER BUTIFFARRA SALTXITXAS", base: "12", uni: "kg"},
+        {cod: "47876", nom: "TRIPA DE XAI 22/24", base: "7", uni: "un", excluirTotal: true}
+    ],
+    "88888": [
+        {cod: "301", nom: "PIT POLLASTRE", base: "12,5", uni: "kg"},
+        {cod: "10006", nom: "CARN POLLASTRE", base: "12,5", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "1,25", uni: "kg"},
+        {cod: "46480", nom: "BURGER MEAT 40 - 27 g/Kg", base: "0,79", uni: "kg"},
+        {cod: "16076", nom: "FIBRA DE PESOL", base: "0,5", uni: "kg"}
+    ],
+    "10035": [
+        {cod: "69913", nom: "FILLET ANGUS", base: "20", uni: "kg"},
+        {cod: "70040", nom: "CARN DE VEDELLA", base: "20", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "4", uni: "kg"},
+        {cod: "46480", nom: "BURGER MEAT 40 - 27 g/Kg", base: "1,188", uni: "kg"}
+    ],
+    "10042": [
+        {cod: "70040", nom: "CARN VEDELLA", base: "50", uni: "kg"},
+        {cod: "46480", nom: "BURGER MEAT 40 - 27 g/Kg", base: "5", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "1,5862", uni: "kg"}
+    ],
+    "20115": [
+        {cod: "70040", nom: "CARN VEDELLA", base: "50", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "5", uni: "kg"},
+        {cod: "46480", nom: "BURGER MEAT 40 - 27 g/Kg", base: "1,586", uni: "kg"}
+    ],
+    "30005": [
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "10", uni: "kg"},
+        {cod: "40", nom: "MORRO PORC", base: "8,34", uni: "kg"},
+        {cod: "11", nom: "LLENGUES PORC", base: "8,32", uni: "kg"},
+        {cod: "47878", nom: "TRIPA CERDO 36/38", base: "5", uni: "un", excluirTotal: true},
+        {cod: "2", nom: "ESPATLLA S/OS PORC", base: "3,5", uni: "kg"},
+        {cod: "47403", nom: "SAL FINA", base: "1,725", uni: "kg"},
+        {cod: "43820", nom: "VALDESPINO SECO VINO", base: "0,18", uni: "kg"},
+        {cod: "2129", nom: "SUCRE BLANC 1 KG 4g/kg", base: "0,08", uni: "kg"},
+        {cod: "45633", nom: "SAL NITRIFICANT 2g/kg", base: "0,075", uni: "kg"},
+        {cod: "46436", nom: "PEBRE BLANC MOLT FI", base: "0,054", uni: "kg"},
+        {cod: "47403", nom: "SAL FINA (Massa)", base: "0,05", uni: "kg"},
+        {cod: "2129", nom: "SUCRE BLANC (Massa)", base: "0,015", uni: "kg"},
+        {cod: "45634", nom: "NOU MOSCADA 0.0005/kg", base: "0,009", uni: "kg"},
+        {cod: "45633", nom: "SAL NITRIFICANT (Massa)", base: "0,007", uni: "kg"}
+    ],
+    "30041": [
+        {cod: "930041", nom: "CRUDO BOTIFARRA DUROC", base: "21", uni: "kg"},
+        {cod: "47873", nom: "TRIPA CERDO 28/30", base: "3", uni: "un", excluirTotal: true},
+        {cod: "41479", nom: "ETIQUETA ESCO 75x80", base: "11", uni: "un", excluirTotal: true},
+        {cod: "40082", nom: "FILM PA+EVOH+PE", base: "11", uni: "un", excluirTotal: true},
+        {cod: "40084", nom: "SAFATA 320.260.50", base: "11", uni: "un", excluirTotal: true}
+    ],
+    "930041": [
+        {cod: "10022", nom: "ESPATLLA PORC DUROC 8mm", base: "16", uni: "kg"},
+        {cod: "49", nom: "PANXETA PORC", base: "4", uni: "kg"},
+        {cod: "27001", nom: "AIGUA", base: "1", uni: "kg"},
+        {cod: "46466", nom: "PREPARAT LONGANISSA FRESCA 5g/kg", base: "0,100", uni: "kg"},
+        {cod: "47403", nom: "SAL FINA 17g/kg", base: "0,340", uni: "kg"},
+        {cod: "46436", nom: "PEBRE BLANCA MOLT FI 3g/kg", base: "0,060", uni: "kg"}
+    ],
+    "69996": [
+        {cod: "70040", nom: "CARN VEDELLA", base: "50", uni: "kg"},
+        {cod: "27001", nom: "AIGUA OSMÒTICA", base: "7,5", uni: "kg"},
+        {cod: "16076", nom: "FIBRA DE PESOLS", base: "1,725", uni: "kg"},
+        {cod: "16023", nom: "SALCO N 16 g/Kg", base: "0,948", uni: "kg"}
+    ]
+};
+
+// --- NAVEGACIÓN ENTRE PANTALLAS ---
+function cambiarPantalla(pantalla) {
+    ocultarTeclados();
+    const regView = document.getElementById("pantalla-registro");
+    const resView = document.getElementById("pantalla-resumen");
+    const btnReg = document.getElementById("btn-nav-registro");
+    const btnRes = document.getElementById("btn-nav-resumen");
+
+    if (pantalla === 'registro') {
+        regView.classList.remove("d-none");
+        resView.classList.add("d-none");
+        btnReg.classList.add("btn-primary", "active");
+        btnReg.classList.remove("btn-outline-primary");
+        btnRes.classList.add("btn-outline-primary");
+        btnRes.classList.remove("btn-primary", "active");
+    } else {
+        regView.classList.add("d-none");
+        resView.classList.remove("d-none");
+        btnRes.classList.add("btn-primary", "active");
+        btnRes.classList.remove("btn-outline-primary");
+        btnReg.classList.add("btn-outline-primary");
+        btnReg.classList.remove("btn-primary", "active");
+        
+        // Asignar fechas por defecto (hoy) al abrir el resumen
+        const hoy = new Date().toISOString().split('T')[0];
+        if (!document.getElementById("fecha-inicio").value) {
+            document.getElementById("fecha-inicio").value = hoy;
+        }
+        if (!document.getElementById("fecha-fin").value) {
+            document.getElementById("fecha-fin").value = hoy;
+        }
+    }
+}
+
+// --- GESTIÓN DE OPERADOR ---
+function gestionarCambioOperador(select) {
+    if (select.value === "__MANUAL__") {
+        const contenedor = document.getElementById("contenedor-operador");
+        contenedor.innerHTML = `
+            <input type="text" id="operador-manual" class="form-control form-control-lg fw-bold border-primary text-primary" 
+                   placeholder="Nombre del operador..." readonly style="width: 100%;">
+        `;
+        const nuevoInput = document.getElementById("operador-manual");
+        nuevoInput.addEventListener("click", (e) => {
+            e.stopPropagation();
+            ocultarTeclados();
+            currentLoteInput = nuevoInput;
+            document.getElementById("alphanumeric-keyboard").classList.remove("hidden");
+        });
+        nuevoInput.click();
+    }
+}
+
+function obtenerNombreOperador() {
+    const select = document.getElementById("operador");
+    if (select) return select.value;
+    const inputManual = document.getElementById("operador-manual");
+    if (inputManual) return inputManual.value.trim().toUpperCase() || "SIN OPERADOR";
+    return "DANIEL GULLA";
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const selectReceta = document.getElementById("receta");
+    const noRecetaMsg = document.getElementById("no-receta-msg");
+    const tablaContenedor = document.getElementById("tabla-contenedor");
+    const tbody = document.getElementById("tabla-ingredientes-body");
+    const numpad = document.getElementById("numeric-pad");
+    const alphapad = document.getElementById("alphanumeric-keyboard");
+
+    // DESCARGAR DIRECTAMENTE DESDE GOOGLE SAGE (CSV)
+    fetch(SAGE_CSV_URL)
+    .then(response => response.text())
+    .then(csvText => {
+        procesarCSVLotes(csvText);
+        const badge = document.getElementById("status-lotes");
+        badge.innerText = "Lots SAGE Online";
+        badge.classList.replace("bg-warning", "bg-success");
+    })
+    .catch(err => {
+        console.error("Error cargando SAGE direct CSV:", err);
+        const badge = document.getElementById("status-lotes");
+        badge.innerText = "Error Lots (Offline)";
+        badge.classList.replace("bg-warning", "bg-danger");
+    });
+
+    function parsearLineaCSV(linea) {
+        let resultado = [];
+        let dentroDeComillas = false;
+        let entradaActual = "";
+        
+        for (let i = 0; i < linea.length; i++) {
+            let char = linea[i];
+            if (char === '"') {
+                dentroDeComillas = !dentroDeComillas;
+            } else if (char === ',' && !dentroDeComillas) {
+                resultado.push(entradaActual.trim().replace(/^"|"$/g, ''));
+                entradaActual = "";
+            } else {
+                entradaActual += char;
+            }
+        }
+        resultado.push(entradaActual.trim().replace(/^"|"$/g, ''));
+        return resultado;
+    }
+
+    function procesarCSVLotes(csvText) {
+        const lineas = csvText.split(/\r?\n/);
+        if (lineas.length < 2) return;
+
+        const headers = parsearLineaCSV(lineas[0]);
+        const colCodigo = headers.indexOf("Codigo Articulo");
+        const colLote = headers.indexOf("IdLote");
+
+        if (colCodigo === -1 || colLote === -1) return;
+
+        lotesTemporalesSAGE = {};
+
+        for (let i = lineas.length - 1; i >= 1; i--) {
+            if (!lineas[i].trim()) continue;
+            const columnas = parsearLineaCSV(lineas[i]);
+            
+            if (columnas.length > Math.max(colCodigo, colLote)) {
+                const codigo = columnas[colCodigo].trim();
+                const lote = columnas[colLote].trim();
+
+                if (codigo && lote) {
+                    if (!lotesTemporalesSAGE[codigo]) {
+                        lotesTemporalesSAGE[codigo] = [];
+                    }
+                    if (!lotesTemporalesSAGE[codigo].includes(lote) && lotesTemporalesSAGE[codigo].length < 3) {
+                        lotesTemporalesSAGE[codigo].push(lote);
+                    }
+                }
+            }
+        }
+    }
+
+    selectReceta.addEventListener("change", (e) => {
+        const recetaId = e.target.value;
+        tbody.innerHTML = ""; 
+        ocultarTeclados();
+        currentInput = null;
+        currentLoteInput = null;
+
+        if (!recetaId || !baseDatosIngredientes[recetaId]) {
+            noRecetaMsg.classList.remove("d-none");
+            tablaContenedor.classList.add("d-none");
+            return;
+        }
+
+        baseDatosIngredientes[recetaId].forEach((item, index) => {
+            if (item.cod === "" && item.nom === "") {
+                const filaSeparador = document.createElement("tr");
+                filaSeparador.innerHTML = `<td colspan="7" class="p-0"><div style="height: 4px; background-color: #ced4da; margin: 4px 0;"></div></td>`;
+                tbody.appendChild(filaSeparador);
+                return;
+            }
+
+            const listaLotes = lotesTemporalesSAGE[item.cod] || ["SENSE LOTE"];
+            let opcionesLotesHTML = "";
+            listaLotes.forEach((lote, idx) => {
+                const seleccionado = idx === 0 ? "selected" : "";
+                opcionesLotesHTML += `<option value="${lote}" ${seleccionado}>${lote}</option>`;
+            });
+            opcionesLotesHTML += `<option value="__MANUAL__">✍️ Introduïr manual...</option>`; 
+
+            const fila = document.createElement("tr");
+
+            if (item.excluirTotal) {
+                fila.setAttribute("data-excluir", "true");
+                fila.style.borderLeft = "4px solid #ffc107"; 
+            }
+
+            fila.innerHTML = `
+                <td class="item-codi">${item.cod}</td>
+                <td class="item-nombre">${item.nom}</td>
+                <td class="celda-lote-dinamica">
+                    <select class="form-select form-select-lg text-primary fw-bold select-lote-personalizado" onchange="gestionarCambioLote(this)">
+                        ${opcionesLotesHTML}
+                    </select>
+                </td>
+                <td class="cantidad-base-valor" data-base="${item.base.replace(',', '.')}">${item.base}</td>
+                <td class="item-unidad">${item.uni}</td>
+                <td class="text-center align-middle">
+                    <input class="form-check-input scale-checkbox" type="checkbox" checked title="Incloure a l'escalat proporcional">
+                </td>
+                <td>
+                    <input type="text" inputmode="decimal" class="form-control form-control-lg num-input" 
+                           name="cantidad_${recetaId}_${index}" 
+                           placeholder="Ingrese cant." 
+                           value="${item.base}" readonly>
+                </td>
+            `;
+            tbody.appendChild(fila);
+        });
+
+        noRecetaMsg.classList.add("d-none");
+        tablaContenedor.classList.remove("d-none");
+        calcularSumaTotales();
+        asignarEventosInputs();
+    });
+
+    function asignarEventosInputs() {
+        document.querySelectorAll(".num-input").forEach(input => {
+            input.addEventListener("click", (e) => {
+                e.stopPropagation(); 
+                ocultarTeclados();
+                currentInput = input;
+                destacarFila(input);
+                numpad.classList.remove("hidden");
+            });
+        });
+    }
+
+    numpad.addEventListener("click", (e) => {
+        e.stopPropagation(); 
+        if (!currentInput || !e.target.classList.contains("btn-num")) return;
+        const value = e.target.getAttribute("data-val");
+
+        if (value === "OK") {
+            ocultarTeclados();
+        } else if (value === "C") {
+            currentInput.value = currentInput.value.slice(0, -1);
+            ejecutarRecalculoProporcional();
+        } else {
+            if (value === "." || value === ",") {
+                if (currentInput.value.includes(".") || currentInput.value.includes(",")) return; 
+            }
+            currentInput.value += value;
+            ejecutarRecalculoProporcional();
+        } 
+    });
+
+    alphapad.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!currentLoteInput || !e.target.classList.contains("btn-key")) return;
+        const key = e.target.getAttribute("data-key");
+
+        if (key === "OK") {
+            ocultarTeclados();
+        } else if (key === "BORRAR") {
+            currentLoteInput.value = currentLoteInput.value.slice(0, -1);
+        } else {
+            currentLoteInput.value += key;
+        }
+    });
+
+    document.addEventListener("click", () => { ocultarTeclados(); });
+});
+
+function gestionarCambioLote(elementoSelect) {
+    if (elementoSelect.value === "__MANUAL__") {
+        const celdaContenedora = elementoSelect.parentElement;
+        celdaContenedora.innerHTML = `
+            <input type="text" class="form-control form-control-lg fw-bold border-danger text-danger input-lote-manual" 
+                   placeholder="Escriu Lot..." readonly style="width: 100%;">
+        `;
+        const nuevoInput = celdaContenedora.querySelector('input');
+        nuevoInput.addEventListener("click", (e) => {
+            e.stopPropagation();
+            ocultarTeclados();
+            currentLoteInput = nuevoInput;
+            destacarFila(nuevoInput);
+            document.getElementById("alphanumeric-keyboard").classList.remove("hidden");
+        });
+        nuevoInput.click();
+    }
+}
+
+function ocultarTeclados() {
+    document.getElementById("numeric-pad").classList.add("hidden");
+    document.getElementById("alphanumeric-keyboard").classList.add("hidden");
+    document.querySelectorAll("#tabla-ingredientes-body tr").forEach(tr => tr.classList.remove("fila-limitante"));
+    currentInput = null;
+}
+
+function destacarFila(elemento) {
+    document.querySelectorAll("#tabla-ingredientes-body tr").forEach(tr => tr.classList.remove("fila-limitante"));
+    elemento.closest("tr").classList.add("fila-limitante");
+}
+
+function calcularSumaTotales() {
+    let sumaBase = 0; 
+    let sumaReal = 0;
+
+    const filas = document.querySelectorAll("#tabla-ingredientes-body tr");
+
+    filas.forEach(fila => {
+        if (fila.getAttribute("data-excluir") === "true") return;
+
+        const tdBase = fila.querySelector(".cantidad-base-valor");
+        const inputReal = fila.querySelector(".num-input");
+
+        if (tdBase) sumaBase += parseFloat(tdBase.getAttribute("data-base")) || 0;
+        if (inputReal) sumaReal += parseFloat(inputReal.value.replace(',', '.')) || 0;
+    });
+
+    document.getElementById("total-base-campo").innerText = Number(sumaBase.toFixed(3)).toString().replace('.', ',');
+    document.getElementById("total-real-campo").innerText = Number(sumaReal.toFixed(3)).toString().replace('.', ',');
+}
+
+function ejecutarRecalculoProporcional() {
+    if (!currentInput) return;
+    const filaActual = currentInput.closest("tr");
+    
+    const checkboxActual = filaActual.querySelector(".scale-checkbox");
+    if (checkboxActual && !checkboxActual.checked) {
+        calcularSumaTotales(); 
+        return; 
+    }
+
+    const valorIntroducido = parseFloat(currentInput.value.replace(',', '.')) || 0;
+    const baseActual = parseFloat(filaActual.querySelector(".cantidad-base-valor").getAttribute("data-base"));
+
+    if (baseActual === 0 || valorIntroducido === 0) return;
+
+    const factorEscala = valorIntroducido / baseActual;
+    const filas = document.querySelectorAll("#tabla-ingredientes-body tr");
+
+    filas.forEach(fila => {
+        if (!fila.querySelector(".cantidad-base-valor")) return;
+        if (fila === filaActual) return;
+        
+        const checkboxFila = fila.querySelector(".scale-checkbox");
+        if (checkboxFila && !checkboxFila.checked) return;
+
+        const baseFila = parseFloat(fila.querySelector(".cantidad-base-valor").getAttribute("data-base"));
+        const inputFila = fila.querySelector(".num-input");
+        const nuevaCantidad = baseFila * factorEscala;
+        inputFila.value = Number(nuevaCantidad.toFixed(4)).toString().replace('.', ',');
+    });
+    
+    calcularSumaTotales();
+}
+
+function enviarAGoogleSheets(event) {
+    event.preventDefault(); 
+    const selectReceta = document.getElementById("receta");
+    const btnGuardar = document.getElementById("btn-guardar");
+    const filas = document.querySelectorAll("#tabla-ingredientes-body tr");
+    const totalBatchCalculado = document.getElementById("total-real-campo").innerText;
+
+    if (filas.length === 0) return;
+
+    btnGuardar.disabled = true;
+    btnGuardar.innerText = "Guardando...";
+
+    const loteInternoCalculado = generarLoteInternoSilencioso();
+
+    const payload = {
+        operador: obtenerNombreOperador(),
+        recetaId: selectReceta.value,
+        recetaNombre: selectReceta.options[selectReceta.selectedIndex].text,
+        totalBatch: totalBatchCalculado,
+        ingredientes: []
+    };
+
+    filas.forEach(fila => {
+        if (!fila.querySelector(".item-codi")) return;
+
+        const campoLoteSelect = fila.querySelector(".select-lote-personalizado");
+        const campoLoteManual = fila.querySelector(".input-lote-manual");
+        
+        let loteFinal = "SENSE LOTE";
+        if (campoLoteSelect) {
+            loteFinal = campoLoteSelect.value;
+        } else if (campoLoteManual) {
+            loteFinal = campoLoteManual.value.trim().toUpperCase() || "MANUAL-BUID";
+        }
+
+        payload.ingredientes.push({
+            codi: fila.querySelector(".item-codi").innerText,
+            nombre: fila.querySelector(".item-nombre").innerText,
+            lote: loteFinal,
+            loteInterno: loteInternoCalculado, 
+            cantidad: fila.querySelector(".num-input").value,
+            unidad: fila.querySelector(".item-unidad").innerText
+        });
+    });
+
+    fetch(WEB_APP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(payload)
+    })
+    .then(response => {
+        alert("¡Batch guardado correctamente!");
+        window.location.reload(); 
+    })
+    .catch(error => {
+        alert("Error de conexión al guardar: " + error);
+        btnGuardar.disabled = false;
+        btnGuardar.innerText = "Confirmar i Desar Batch";
+    });
+}
+
+function generarLoteInternoSilencioso() {
+    const hoy = new Date();
+    const dia = String(hoy.getDate()).padStart(2, '0');
+    const mes = String(hoy.getMonth() + 1).padStart(2, '0'); 
+    const anio = String(hoy.getFullYear()).slice(-2); 
+    return `${dia}${mes}${anio}EO`;
+}
+
+// --- CONSULTA Y RESUMEN DE PRODUCCIÓN ---
+function cargarResumenProduccion() {
+    const fInicio = document.getElementById("fecha-inicio").value;
+    const fFin = document.getElementById("fecha-fin").value;
+    const tbodyResumen = document.getElementById("tabla-resumen-body");
+    const loader = document.getElementById("resumen-cargando");
+
+    if (!fInicio || !fFin) {
+        alert("Por favor seleccione un rango de fechas válido.");
+        return;
+    }
+
+    loader.classList.remove("d-none");
+    tbodyResumen.innerHTML = "";
+
+    const urlConsulta = `${WEB_APP_URL}?action=resumen&inicio=${fInicio}&fin=${fFin}`;
+
+    fetch(urlConsulta)
+    .then(res => res.json())
+    .then(datos => {
+        loader.classList.add("d-none");
+        if (!datos || datos.length === 0) {
+            tbodyResumen.innerHTML = `<tr><td colspan="4" class="text-center text-muted">No se encontraron producciones en el rango de fechas seleccionado.</td></tr>`;
+            return;
+        }
+
+        datos.forEach(row => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td class="fw-bold">${row.recetaId}</td>
+                <td>${row.recetaNombre}</td>
+                <td class="text-center">${row.lotesElaborados}</td>
+                <td class="text-end fw-bold text-success">${Number(row.totalKg.toFixed(3)).toString().replace('.', ',')} kg</td>
+            `;
+            tbodyResumen.appendChild(tr);
+        });
+    })
+    .catch(err => {
+        loader.classList.add("d-none");
+        tbodyResumen.innerHTML = `<tr><td colspan="4" class="text-center text-danger">Error al consultar datos: ${err}</td></tr>`;
+    });
+}
+</script>
+
+</body>
+</html>
